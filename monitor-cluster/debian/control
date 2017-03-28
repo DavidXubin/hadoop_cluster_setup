@@ -1,0 +1,11 @@
+Source: bds-monitor-cluster-0.9
+Section: non-free/bds
+Priority: optional
+Maintainer:David Xu <David.X.Xu@emc.com>
+
+Package:bds-monitor-cluster-0.9
+Priority:optional
+Architecture:any
+Description: install opentsdb cluster for infra monitoring.
+Depends: jq, ntp
+

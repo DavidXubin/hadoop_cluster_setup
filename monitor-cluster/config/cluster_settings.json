@@ -1,0 +1,73 @@
+{
+    "account": {
+        "user" : "bds",
+        "group" : "infra"
+    },
+
+    "install_path" : "/opt/monitor",
+
+
+    "hosts": [
+        {
+            "ip": "172.16.31.65",
+            "name": "monitor-master"
+        },
+
+        {
+            "ip": "172.16.31.66",
+            "name": "monitor-slave1"
+        },
+
+        {
+            "ip": "172.16.31.67",
+            "name": "monitor-slave2"
+        },
+
+        {
+            "ip": "172.16.31.68",
+            "name": "monitor-slave3"
+        }
+    ],
+
+
+    "ntp_cluster": {
+        "timezone": "/usr/share/zoneinfo/Asia/Shanghai",
+        "master": "monitor-master",
+        "slaves": ["monitor-slave1", "monitor-slave2", "monitor-slave3"]
+    },
+
+    "hadoop_cluster": {
+        "master":  "monitor-master",
+        "secondary_master": "",
+        "slaves": ["monitor-slave1", "monitor-slave2", "monitor-slave3"]
+    },
+
+    "zookeeper_cluster": [
+        {
+            "host" : "monitor-master",
+            "id" : 1
+        },
+        {
+            "host" : "monitor-slave1",
+            "id" : 2
+        },
+        {
+            "host" : "monitor-slave3",
+            "id" : 3
+        }
+    ],
+
+    "hbase_cluster": {
+        "master": "monitor-master",
+        "secondary_master": " monitor-slave3",
+        "slaves": ["monitor-slave1", "monitor-slave2", "monitor-slave3"]
+    },
+
+    "opentsdb_cluster": ["monitor-master", "monitor-slave1", "monitor-slave2", "monitor-slave3"],
+
+    "spark_cluster": {
+        "master": "monitor-master",
+        "slaves": ["monitor-slave1", "monitor-slave2", "monitor-slave3"]
+    }
+
+}

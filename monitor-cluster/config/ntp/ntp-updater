@@ -1,0 +1,1 @@
+* */1 * * * root /usr/sbin/ntpdate <ntp-master>

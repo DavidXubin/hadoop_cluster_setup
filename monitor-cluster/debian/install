@@ -1,0 +1,3 @@
+config opt/monitor/monitor-cluster
+*.sh opt/monitor/monitor-cluster
+*.txt opt/monitor/monitor-cluster
