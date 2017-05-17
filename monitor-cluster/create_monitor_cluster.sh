@@ -161,6 +161,57 @@ function is_master() {
 }
 
 
+function is_node_of_cluster() {
+
+    local cur_dir=$1
+    local host_name=`get_local_hostname $cur_dir`
+    #the function parameter is cluster type, e.g., ntp_cluster, hadoop_cluster, hbase_cluster and zookeeper_cluster
+    local cluster_type=$2
+
+    if [ $cluster_type = "zookeeper_cluster" ]; then
+        local keys=`jq -r ".zookeeper_cluster|keys[]" ${cur_dir}/config/cluster_settings.json`
+
+        for key in ${keys[*]}; do
+            host=$(jq ".zookeeper_cluster[$key].host" ${cur_dir}/config/cluster_settings.json)
+            host=`echo $host | sed 's/\"//g'`
+
+            if [ $host_name = $host ]; then
+                return 1
+            fi
+        done
+    elif [ $cluster_type = "opentsdb_cluster" ]; then
+        local keys=`jq -r ".opentsdb_cluster|keys[]" ${cur_dir}/config/cluster_settings.json`
+
+        for key in ${keys[*]}; do
+            host=$(jq ".opentsdb_cluster[$key]" ${cur_dir}/config/cluster_settings.json)
+            host=`echo $host | sed 's/\"//g'`
+
+            if [ $host_name = $host ]; then
+                return 1
+            fi
+        done
+    else
+        local master_name=`jq ".${cluster_type}.master" ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
+        if [ $host_name = $master_name ]; then
+            return 1
+        fi
+
+        local keys=`jq -r ".${cluster_type}.slaves|keys[]" ${cur_dir}/config/cluster_settings.json`
+
+        for key in ${keys[*]}; do
+            host=$(jq ".${cluster_type}.slaves[$key]" ${cur_dir}/config/cluster_settings.json)
+            host=`echo $host | sed 's/\"//g'`
+
+            if [ $host_name = $host ]; then
+                return 1
+            fi
+        done
+    fi
+
+    return 0
+}
+
+
 function set_ssh_logon() {
 
     local ip_addr=`get_local_ip`
@@ -219,8 +270,15 @@ function check_account() {
 function set_ntp_cluster() {
 
     local cur_dir=$1
+    is_node_of_cluster $cur_dir ntp_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
     local timezone=`jq '.ntp_cluster.timezone' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
-    cp $timezone /etc/localtime
+    if [ $timezone ]; then
+        cp $timezone /etc/localtime
+    fi
     apt-get install ntp
 
     is_master $cur_dir ntp_cluster
@@ -239,7 +297,6 @@ function set_ntp_cluster() {
             ntpdate -q 127.0.0.1 | egrep "adjust time server 127.0.0.1"
             if [ $? -ne 0 ]; then
                 echo "ntp server fails, please check manually"
-                exit 1
             fi
         fi
     else
@@ -256,6 +313,11 @@ function set_ntp_cluster() {
 function set_hadoop() {
 
     local cur_dir=$1
+    is_node_of_cluster $cur_dir hadoop_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     local install_path_for_sed=${install_path//\//\\\/}
     local hadoop_master=`jq '.hadoop_cluster.master' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
@@ -308,6 +370,15 @@ function set_hadoop() {
     fi
     mkdir -p ${install_path}/hadoop/hadoop_data/hdfs/datanode
 
+    if [ -f "${install_path}/hadoop/etc/hadoop/masters" ]; then
+        rm -f ${install_path}/hadoop/etc/hadoop/masters
+    fi
+    local secondary_master=`jq '.hadoop_cluster.secondary_master' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
+    if [ $secondary_master ]; then
+        sed -i "s/\%secondary_namenode\%/${secondary_master}/" ${install_path}/hadoop/etc/hadoop/hdfs-site.xml
+        echo -e "$secondary_master" > ${install_path}/hadoop/etc/hadoop/masters
+    fi
+
     local user=`jq '.account.user' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
 
     egrep "#hadoop config" /home/${user}/.bashrc >& /dev/null
@@ -329,6 +400,11 @@ function set_hadoop() {
 function set_zookeeper() {
 
     local cur_dir=$1
+    is_node_of_cluster $cur_dir zookeeper_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
     local user=`jq '.account.user' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     local group=`jq '.account.group' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
@@ -368,6 +444,11 @@ function set_zookeeper() {
 function set_hbase() {
 
     local cur_dir=$1
+    is_node_of_cluster $cur_dir hbase_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
     local user=`jq '.account.user' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     local install_path_for_sed=${install_path//\//\\\/}
@@ -393,7 +474,6 @@ function set_hbase() {
         fi
     done
 
-    echo $zookeeper_nodes
     sed -i "s/\%zookeeper_cluster\%/${zookeeper_nodes}/" ${install_path}/hbase/conf/hbase-site.xml
     sed -i "s/\%user\%/${user}/" ${install_path}/hbase/conf/hbase-site.xml
 
@@ -435,6 +515,11 @@ function set_hbase() {
 function set_opentsdb() {
 
     local cur_dir=$1
+    is_node_of_cluster $cur_dir opentsdb_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
     local user=`jq '.account.user' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     local group=`jq '.account.group' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
@@ -495,6 +580,11 @@ function set_install_path_permission() {
 function start_hadoop() {
 
     local cur_dir=$1
+    is_node_of_cluster $cur_dir hadoop_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
 
     is_master $cur_dir hadoop_cluster
@@ -520,6 +610,11 @@ function start_hadoop() {
 function stop_hadoop() {
 
     local cur_dir=$1
+    is_node_of_cluster $cur_dir hadoop_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     is_master $cur_dir hadoop_cluster
 
@@ -541,41 +636,44 @@ function stop_hadoop() {
 function start_zookeeper() {
 
     local cur_dir=$1
-    local keys=`jq -r '.zookeeper_cluster|keys[]' ${cur_dir}/config/cluster_settings.json`''
-    local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
-    local local_hostname=`get_local_hostname ${cur_dir}`
-    local is_zookeeper_node=0
-    local zookeeper_nodes=()
-    local index=0
-
-    for key in ${keys[*]}; do
-        local host=$(jq ".zookeeper_cluster[$key].host" ${cur_dir}/config/cluster_settings.json)
-        host=`echo $host | sed 's/\"//g'`
-
-        if [ $local_hostname = $host ]; then
-            is_zookeeper_node=1
-        else
-            zookeeper_nodes[$index]=$host
-            index=$(($index + 1))
-        fi
-    done
-
-    if [ $is_zookeeper_node = 1 ] ; then
-        jps | grep QuorumPeerMain
-        if [ $? -ne 0 ]; then
-            for node in ${zookeeper_nodes[*]}; do
-                ssh $node "${install_path}/zookeeper/bin/zkServer.sh start"
-            done
-            ${install_path}/zookeeper/bin/zkServer.sh start
-        fi
+    is_node_of_cluster $cur_dir zookeeper_cluster
+    if [ $? = 0 ]; then
+        return
     fi
 
+    jps | grep QuorumPeerMain
+
+    if [ $? -ne 0 ]; then
+        local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
+        ${install_path}/zookeeper/bin/zkServer.sh start
+    fi
 }
 
+function check_zookeeper() {
+
+    local cur_dir=$1
+    is_node_of_cluster $cur_dir zookeeper_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
+    local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
+    mode=`${install_path}/zookeeper/bin/zkServer.sh status | grep Mode | sed 's/Mode: \(.*\)/\1/g'`
+
+    while [ ! $mode ] || [ $mode != "follower" -a $mode != "leader" ]; do
+        sleep 1
+        mode=`${install_path}/zookeeper/bin/zkServer.sh status | grep Mode | sed 's/Mode: \(.*\)/\1/g'`
+    done
+}
 
 function stop_zookeeper() {
 
     local cur_dir=$1
+    is_node_of_cluster $cur_dir zookeeper_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
     jps | grep QuorumPeerMain
 
     if [ $? = 0 ]; then
@@ -584,10 +682,14 @@ function stop_zookeeper() {
     fi
 }
 
-
 function start_hbase() {
 
     local cur_dir=$1
+    is_node_of_cluster $cur_dir hbase_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     is_master $1 hbase_cluster
 
@@ -602,6 +704,11 @@ function start_hbase() {
 function stop_hbase() {
 
     local cur_dir=$1
+    is_node_of_cluster $cur_dir hbase_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     is_master $cur_dir hbase_cluster
 
@@ -616,6 +723,11 @@ function stop_hbase() {
 function start_opentsdb() {
 
     local cur_dir=$1
+    is_node_of_cluster $cur_dir opentsdb_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     local local_hostname=`get_local_hostname ${cur_dir}`
 
@@ -643,6 +755,11 @@ function start_opentsdb() {
 function stop_opentsdb() {
 
     local cur_dir=$1
+    is_node_of_cluster $cur_dir opentsdb_cluster
+    if [ $? = 0 ]; then
+        return
+    fi
+
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     local local_hostname=`get_local_hostname ${cur_dir}`
 
@@ -660,16 +777,6 @@ function stop_opentsdb() {
             break
         fi
     done
-}
-
-function check_current_user() {
-
-    local cur_dir=$1
-    local user=`jq '.account.user' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
-     if [ `whoami` != $user ]; then
-        echo "Please use \"su - ${user}\"  to change account, then start/stop cluster"
-        exit
-    fi
 }
 
 
@@ -706,21 +813,39 @@ case $1 in
         set_opentsdb $2
         set_install_path_permission $2
         ;;
-    start)
-        echo "start cluster"
-        check_current_user $2
+    start_zookeeper)
+        echo "start zookeeper"
         start_zookeeper $2
+        ;;
+    check_zookeeper)
+        echo "check zookeeper status"
+        check_zookeeper $2
+        ;;
+    stop_zookeeper)
+        echo "stop zookeeper"
+        stop_zookeeper
+        ;;
+    start_hadoop)
+        echo "start hadoop"
         start_hadoop $2
+        ;;
+    stop_hadoop)
+        echo "stop hadoop"
+        stop_hadoop $2
+        ;;
+    start_hbase)
+        echo "start hbase"
         start_hbase $2
+        ;;
+    stop_hbase)
+        echo "stop hbase"
+        stop_hbase $2
+        ;;
+    start_opentsdb)
         start_opentsdb $2
         ;;
-    stop)
-        echo "stop cluster"
-        check_current_user $2
+    stop_opentsdb)
         stop_opentsdb $2
-        stop_hbase $2
-        stop_hadoop $2
-        stop_zookeeper $2
         ;;
     *)
         echo "1st. on each node, run \"deploy_monitor_cluster.sh account\" to create account"
