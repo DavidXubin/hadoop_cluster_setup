@@ -52,10 +52,10 @@ function install_java() {
     egrep "JAVA_HOME" /home/${user}/.bashrc >& /dev/null
     if [ $? -ne 0 ]
     then
-        apt-get install openjdk-7-jdk
+        #apt-get install openjdk-7-jdk
 
         echo "#Java Variables" >> /home/${user}/.bashrc
-        echo "export JAVA_HOME=/usr/lib/jvm/java-7-openjdk-amd64" >> /home/${user}/.bashrc
+        echo "export JAVA_HOME=/usr/lib/jvm/java-8-oracle" >> /home/${user}/.bashrc
         echo "export CLASSPATH=.:$JAVA_HOME/lib/dt.jar:$JAVA_HOME/lib/tools.jar" >> /home/${user}/.bashrc
     fi
 }
@@ -280,30 +280,44 @@ function set_ntp_cluster() {
         cp $timezone /etc/localtime
     fi
     apt-get install ntp
+    apt-get install ntpdate
 
     is_master $cur_dir ntp_cluster
     if [ $? = 1 ] ;then
 
         egrep "#ntp cluster for monitoring" /etc/ntp.conf >& /dev/null
         if [ $? -ne 0 ]; then
-            sed -i '/server [0-9]\{1,\}\.ubuntu.pool.ntp.org/s/^/#&/' /etc/ntp.conf
-            sed -i '/server ntp.ubuntu.com/i\#ntp cluster for monitoring' /etc/ntp.conf
-            sed -i '/server ntp.ubuntu.com/s/^/#&/' /etc/ntp.conf
-            sed -i '/#server ntp.ubuntu.com/a\server 127.127.1.0 minpoll 4 maxpoll 5' /etc/ntp.conf
+            sed -i '/pool [0-9]\{1,\}\.ubuntu.pool.ntp.org/s/^/#&/' /etc/ntp.conf
+            sed -i '/pool ntp.ubuntu.com/i\#ntp cluster for monitoring' /etc/ntp.conf
+            sed -i '/pool ntp.ubuntu.com/s/^/#&/' /etc/ntp.conf
+	    sed -i '/#pool ntp.ubuntu.com/a\server 0.cn.pool.ntp.org' /etc/ntp.conf
+	    sed -i '/server 0.cn.pool.ntp.org/a\server 1.cn.pool.ntp.org' /etc/ntp.conf
+            sed -i '/server 1.cn.pool.ntp.org/a\server 127.127.1.0 minpoll 4 maxpoll 5' /etc/ntp.conf
             sed -i '/server 127.127.1.0 minpoll 4 maxpoll 5/a\fudge 127.127.1.0 stratum 2' /etc/ntp.conf
+	fi
+        /etc/init.d/ntp restart
 
-            /etc/init.d/ntp restart
+	updated=1
 
-            ntpdate -q 127.0.0.1 | egrep "adjust time server 127.0.0.1"
-            if [ $? -ne 0 ]; then
-                echo "ntp server fails, please check manually"
-            fi
-        fi
+	while [ $updated -ne 0 ]; do
+	    sleep 5
+            ntpdate -q 127.0.0.1 | egrep "adjust time server 127.0.0.1" >& /dev/null
+	    updated=$?
+	    echo "updated is $updated"
+	done
     else
         /etc/init.d/ntp stop
         local ntp_master=`jq '.ntp_cluster.master' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
 
-        ntpdate $ntp_master
+	updated=1
+
+	while [ $updated -ne 0 ]; do
+	     sleep 5
+             ntpdate $ntp_master | egrep "adjust time server" >& /dev/null
+	     updated=$?
+	     echo "updated is $updated"
+	done
+
         cp ${cur_dir}/config/ntp/ntp-updater /etc/cron.d/
         sed -i "s/<.*>/${ntp_master}/" /etc/cron.d/ntp-updater
     fi
@@ -323,7 +337,7 @@ function set_hadoop() {
     local hadoop_master=`jq '.hadoop_cluster.master' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
 
     cp ${cur_dir}/config/hadoop/hadoop-env.sh ${install_path}/hadoop/etc/hadoop/hadoop-env.sh
-    sed -i "s/\%java_home\%/java-7-openjdk-amd64/" ${install_path}/hadoop/etc/hadoop/hadoop-env.sh
+    sed -i "s/\%java_home\%/java-8-oracle/" ${install_path}/hadoop/etc/hadoop/hadoop-env.sh
 
     cp ${cur_dir}/config/hadoop/core-site.xml ${install_path}/hadoop/etc/hadoop/
     sed -i "s/\%hadoop_master\%/${hadoop_master}/" ${install_path}/hadoop/etc/hadoop/core-site.xml
@@ -332,10 +346,14 @@ function set_hadoop() {
     cp ${cur_dir}/config/hadoop/hdfs-site.xml ${install_path}/hadoop/etc/hadoop/
     sed -i "s/\%install_path\%/${install_path_for_sed}/" ${install_path}/hadoop/etc/hadoop/hdfs-site.xml
     local slaves=`jq -r '.hadoop_cluster.slaves|keys[]' ${cur_dir}/config/cluster_settings.json`
-    local slave_num=0
-    for i in ${slaves[*]}; do
-        slave_num=$(($slave_num + 1))
-    done
+    
+    slave_num=`jq '.hadoop_cluster.replicate_num' ${cur_dir}/config/cluster_settings.json`
+    if [ ! $slave_num ]; then
+       slave_num=0
+       for i in ${slaves[*]}; do
+          slave_num=$(($slave_num + 1))
+       done
+    fi
 
     sed -i "s/\%replication_number\%/${slave_num}/" ${install_path}/hadoop/etc/hadoop/hdfs-site.xml
 
@@ -457,7 +475,7 @@ function set_hbase() {
 
     cp ${cur_dir}/config/hbase/hbase-env.sh  ${install_path}/hbase/conf/
     sed -i "s/\%install_path\%/${install_path_for_sed}/" ${install_path}/hbase/conf/hbase-env.sh
-    sed -i "s/\%java_home\%/java-7-openjdk-amd64/" ${install_path}/hbase/conf/hbase-env.sh
+    sed -i "s/\%java_home\%/java-8-oracle/" ${install_path}/hbase/conf/hbase-env.sh
 
     cp ${cur_dir}/config/hbase/hbase-site.xml ${install_path}/hbase/conf/
     sed -i "s/\%hadoop_master\%/${hadoop_master}/" ${install_path}/hbase/conf/hbase-site.xml
@@ -823,7 +841,7 @@ case $1 in
         ;;
     stop_zookeeper)
         echo "stop zookeeper"
-        stop_zookeeper
+        stop_zookeeper $2
         ;;
     start_hadoop)
         echo "start hadoop"

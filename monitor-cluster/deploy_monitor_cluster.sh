@@ -101,6 +101,7 @@ function deploy_cluster() {
 
             start_stop_cluster $cur_dir $action hadoop
             start_stop_cluster $cur_dir $action hbase
+            sleep 30
             start_stop_cluster $cur_dir $action opentsdb
         elif [ $action = "stop" ]; then
             start_stop_cluster $cur_dir $action opentsdb
