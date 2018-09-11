@@ -1,3 +1,14 @@
+Current support hadoop stack version:
+
+1.hadoop-2.8.3
+2.hbase-2.1.0
+3.zookeeper-3.4.12
+4.hive-2.3.3
+5.opentsdb-2.3.1
+6.spark-2.3.1
+
+##########################################################################################################
+
 How to build a opentsdb cluster with multiple nodes from scratch?
 
 1. Fill the nodes information in config/cluster_settings.json including new user and group

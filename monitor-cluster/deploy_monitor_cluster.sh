@@ -4,7 +4,8 @@ function get_local_ip() {
 
     local network_interface=`ifconfig -s | awk '$1 ~ /^eth/ {print $1; exit;}'`
     if [ -z $network_interface ]; then
-        network_interface=`ifconfig -s | awk '$1 ~ /^ens/ {print $1; exit;}'`
+        #Adjust your network interface
+        network_interface=`ifconfig -s | awk '$1 ~ /^enp0s8/ {print $1; exit;}'`
     fi
 
     local ip_addr=`ifconfig ${network_interface}| grep 'inet addr' | sed 's/inet addr:\([\.0-9]\{1,\}\).*/\1/g'`

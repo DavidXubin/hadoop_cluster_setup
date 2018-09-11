@@ -52,10 +52,10 @@ function install_java() {
     egrep "JAVA_HOME" /home/${user}/.bashrc >& /dev/null
     if [ $? -ne 0 ]
     then
-        #apt-get install openjdk-7-jdk
-
         echo "#Java Variables" >> /home/${user}/.bashrc
-        echo "export JAVA_HOME=/usr/lib/jvm/java-8-oracle" >> /home/${user}/.bashrc
+        local javac_path=`which javac`
+        local jvm_path=`readlink -f $javac_path`
+        echo "export JAVA_HOME=${jvm_path%/bin/javac}" >> /home/${user}/.bashrc
         echo "export CLASSPATH=.:$JAVA_HOME/lib/dt.jar:$JAVA_HOME/lib/tools.jar" >> /home/${user}/.bashrc
     fi
 }
@@ -71,7 +71,7 @@ function set_hostname() {
 
             host_ip=`echo $host_ip | sed 's/\"//g'`
             host_name=`echo $host_name | sed 's/\"//g'`
-
+            #according to https://wiki.apache.org/hadoop/UnknownHost, FQDN must include a trailing dot.
             sed -i "1i\\${host_ip}  ${host_name} ${host_name}." /etc/hosts
         done
 
@@ -83,13 +83,24 @@ function get_local_ip() {
 
     local network_interface=`ifconfig -s | awk '$1 ~ /^eth/ {print $1; exit;}'`
     if [ -z $network_interface ]; then
-        network_interface=`ifconfig -s | awk '$1 ~ /^ens/ {print $1; exit;}'`
+        #please adjust your network interface
+        network_interface=`ifconfig -s | awk '$1 ~ /^enp0s8/ {print $1; exit;}'`
     fi
 
     local ip_addr=`ifconfig ${network_interface}| grep 'inet addr' | sed 's/inet addr:\([\.0-9]\{1,\}\).*/\1/g'`
 
     echo $ip_addr
 }
+
+function get_java_name() {
+    local javac_path=`which javac`
+    local jvm_path=`readlink -f $javac_path`
+
+    local trim_left_path=${jvm_path#/usr/lib/jvm/}
+
+    echo ${trim_left_path%/bin/javac}
+}
+
 
 function get_local_hostname() {
 
@@ -284,44 +295,42 @@ function set_ntp_cluster() {
 
     is_master $cur_dir ntp_cluster
     if [ $? = 1 ] ;then
-
         egrep "#ntp cluster for monitoring" /etc/ntp.conf >& /dev/null
         if [ $? -ne 0 ]; then
             sed -i '/pool [0-9]\{1,\}\.ubuntu.pool.ntp.org/s/^/#&/' /etc/ntp.conf
             sed -i '/pool ntp.ubuntu.com/i\#ntp cluster for monitoring' /etc/ntp.conf
             sed -i '/pool ntp.ubuntu.com/s/^/#&/' /etc/ntp.conf
-	    sed -i '/#pool ntp.ubuntu.com/a\server 0.cn.pool.ntp.org' /etc/ntp.conf
-	    sed -i '/server 0.cn.pool.ntp.org/a\server 1.cn.pool.ntp.org' /etc/ntp.conf
+            sed -i '/#pool ntp.ubuntu.com/a\server 0.cn.pool.ntp.org' /etc/ntp.conf
+            sed -i '/server 0.cn.pool.ntp.org/a\server 1.cn.pool.ntp.org' /etc/ntp.conf
             sed -i '/server 1.cn.pool.ntp.org/a\server 127.127.1.0 minpoll 4 maxpoll 5' /etc/ntp.conf
             sed -i '/server 127.127.1.0 minpoll 4 maxpoll 5/a\fudge 127.127.1.0 stratum 2' /etc/ntp.conf
-	fi
+        fi
         /etc/init.d/ntp restart
 
-	updated=1
+        updated=1
 
-	while [ $updated -ne 0 ]; do
-	    sleep 5
+        while [ $updated -ne 0 ]; do
+            sleep 5
             ntpdate -q 127.0.0.1 | egrep "adjust time server 127.0.0.1" >& /dev/null
-	    updated=$?
-	    echo "updated is $updated"
-	done
+            updated=$?
+            echo "updated is $updated"
+	    done
     else
         /etc/init.d/ntp stop
         local ntp_master=`jq '.ntp_cluster.master' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
 
-	updated=1
+        updated=1
 
-	while [ $updated -ne 0 ]; do
-	     sleep 5
-             ntpdate $ntp_master | egrep "adjust time server" >& /dev/null
-	     updated=$?
-	     echo "updated is $updated"
-	done
+        while [ $updated -ne 0 ]; do
+            sleep 5
+            ntpdate $ntp_master | egrep "adjust time server" >& /dev/null
+            updated=$?
+            echo "updated is $updated"
+        done
 
         cp ${cur_dir}/config/ntp/ntp-updater /etc/cron.d/
         sed -i "s/<.*>/${ntp_master}/" /etc/cron.d/ntp-updater
     fi
-
 }
 
 function set_hadoop() {
@@ -336,8 +345,9 @@ function set_hadoop() {
     local install_path_for_sed=${install_path//\//\\\/}
     local hadoop_master=`jq '.hadoop_cluster.master' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
 
+    local java_home=`get_java_name`
     cp ${cur_dir}/config/hadoop/hadoop-env.sh ${install_path}/hadoop/etc/hadoop/hadoop-env.sh
-    sed -i "s/\%java_home\%/java-8-oracle/" ${install_path}/hadoop/etc/hadoop/hadoop-env.sh
+    sed -i "s/\%java_home\%/${java_home}/" ${install_path}/hadoop/etc/hadoop/hadoop-env.sh
 
     cp ${cur_dir}/config/hadoop/core-site.xml ${install_path}/hadoop/etc/hadoop/
     sed -i "s/\%hadoop_master\%/${hadoop_master}/" ${install_path}/hadoop/etc/hadoop/core-site.xml
@@ -346,9 +356,9 @@ function set_hadoop() {
     cp ${cur_dir}/config/hadoop/hdfs-site.xml ${install_path}/hadoop/etc/hadoop/
     sed -i "s/\%install_path\%/${install_path_for_sed}/" ${install_path}/hadoop/etc/hadoop/hdfs-site.xml
     local slaves=`jq -r '.hadoop_cluster.slaves|keys[]' ${cur_dir}/config/cluster_settings.json`
-    
+
     slave_num=`jq '.hadoop_cluster.replicate_num' ${cur_dir}/config/cluster_settings.json`
-    if [ ! $slave_num ]; then
+    if [ $slave_num = null ]; then
        slave_num=0
        for i in ${slaves[*]}; do
           slave_num=$(($slave_num + 1))
@@ -473,9 +483,10 @@ function set_hbase() {
 
     local hadoop_master=`jq '.hadoop_cluster.master' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
 
+    local java_home=`get_java_name`
     cp ${cur_dir}/config/hbase/hbase-env.sh  ${install_path}/hbase/conf/
     sed -i "s/\%install_path\%/${install_path_for_sed}/" ${install_path}/hbase/conf/hbase-env.sh
-    sed -i "s/\%java_home\%/java-8-oracle/" ${install_path}/hbase/conf/hbase-env.sh
+    sed -i "s/\%java_home\%/${java_home}/" ${install_path}/hbase/conf/hbase-env.sh
 
     cp ${cur_dir}/config/hbase/hbase-site.xml ${install_path}/hbase/conf/
     sed -i "s/\%hadoop_master\%/${hadoop_master}/" ${install_path}/hbase/conf/hbase-site.xml
