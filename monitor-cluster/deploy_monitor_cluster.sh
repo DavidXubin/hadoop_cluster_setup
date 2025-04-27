@@ -1,17 +1,21 @@
 #!/bin/bash
+if [ -f ~/.bashrc ]; then
+    . ~/.bashrc
+fi
 
 function get_local_ip() {
 
     local network_interface=`ifconfig -s | awk '$1 ~ /^eth/ {print $1; exit;}'`
     if [ -z $network_interface ]; then
-        #Adjust your network interface
-        network_interface=`ifconfig -s | awk '$1 ~ /^enp0s8/ {print $1; exit;}'`
+        #please adjust your network interface
+        network_interface=`ifconfig -s | awk '$1 ~ /^ens/ {print $1; exit;}'`
     fi
 
-    local ip_addr=`ifconfig ${network_interface}| grep 'inet addr' | sed 's/inet addr:\([\.0-9]\{1,\}\).*/\1/g'`
+    local ip_addr=`ifconfig ${network_interface}| grep 'inet ' | sed 's/inet \([\.0-9]\{1,\}\).*/\1/g' | grep -v '127.0.0.1'`
 
     echo $ip_addr
 }
+
 
 function check_current_user() {
 
@@ -35,7 +39,7 @@ function check_zookeeper_cluster() {
         if [ $local_ip = $host_ip ]; then
             ${cur_dir}/create_monitor_cluster.sh check_zookeeper $cur_dir
         else
-            ssh $host_ip "${cur_dir}/create_monitor_cluster.sh check_zookeeper $cur_dir"
+            ssh $host_ip "source ~/.bashrc; ${cur_dir}/create_monitor_cluster.sh check_zookeeper $cur_dir"
         fi
     done
 }
@@ -55,12 +59,12 @@ function start_stop_cluster() {
         if [ $local_ip = $host_ip ]; then
             ${cur_dir}/create_monitor_cluster.sh ${action}_${cluster} $cur_dir
         else
-            ssh $host_ip "${cur_dir}/create_monitor_cluster.sh ${action}_${cluster} $cur_dir"
+            ssh $host_ip "source ~/.bashrc; ${cur_dir}/create_monitor_cluster.sh ${action}_${cluster} $cur_dir"
         fi
     done
 }
 
-function install_cluster() {
+function install_hadoop() {
 
     local cur_dir=$1
     local keys=`jq -r '.hosts|keys[]' ${cur_dir}/config/cluster_settings.json`
@@ -70,9 +74,31 @@ function install_cluster() {
         host_ip=`echo $host_ip | sed 's/\"//g'`
 
         if [ $local_ip = $host_ip ]; then
-            ${cur_dir}/create_monitor_cluster.sh install $cur_dir
+            ${cur_dir}/create_monitor_cluster.sh install_hadoop $cur_dir
         else
-            ssh $host_ip "${cur_dir}/create_monitor_cluster.sh install $cur_dir"
+            echo $host_ip
+
+            ssh $host_ip "source ~/.bashrc; ${cur_dir}/create_monitor_cluster.sh install_hadoop $cur_dir"
+        fi
+    done
+}
+
+
+function install_zookeeper() {
+
+    local cur_dir=$1
+    local keys=`jq -r '.hosts|keys[]' ${cur_dir}/config/cluster_settings.json`
+
+    for key in ${keys[*]}; do
+        host_ip=$(jq ".hosts[$key].ip" ${cur_dir}/config/cluster_settings.json)
+        host_ip=`echo $host_ip | sed 's/\"//g'`
+
+        if [ $local_ip = $host_ip ]; then
+            ${cur_dir}/create_monitor_cluster.sh install_zookeeper $cur_dir
+        else
+            echo $host_ip
+
+            ssh $host_ip "source ~/.bashrc; ${cur_dir}/create_monitor_cluster.sh install_zookeeper $cur_dir"
         fi
     done
 }
@@ -92,8 +118,10 @@ function deploy_cluster() {
 
     if [ $action = "account" ] || [ $action = "ssh" ] || [ $action = "help" ]; then
         ${cur_dir}/create_monitor_cluster.sh $action $cur_dir
-    elif [ $action = "install" ]; then
+    elif [ $action = "install_hadoop" ]; then
         install_cluster $cur_dir
+    elif [ $action = "install_zookeeper" ]; then
+        install_zookeeper $cur_dir
     else
         check_current_user $cur_dir
         if [ $action = "start" ]; then
@@ -101,12 +129,12 @@ function deploy_cluster() {
             check_zookeeper_cluster $cur_dir
 
             start_stop_cluster $cur_dir $action hadoop
-            start_stop_cluster $cur_dir $action hbase
-            sleep 30
-            start_stop_cluster $cur_dir $action opentsdb
+            #start_stop_cluster $cur_dir $action hbase
+            #sleep 30
+            #start_stop_cluster $cur_dir $action opentsdb
         elif [ $action = "stop" ]; then
-            start_stop_cluster $cur_dir $action opentsdb
-            start_stop_cluster $cur_dir $action hbase
+            #start_stop_cluster $cur_dir $action opentsdb
+            #start_stop_cluster $cur_dir $action hbase
             start_stop_cluster $cur_dir $action hadoop
             start_stop_cluster $cur_dir $action zookeeper
         fi

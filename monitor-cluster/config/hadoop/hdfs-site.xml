@@ -17,16 +17,73 @@
 <!-- Put site-specific property overrides in this file. -->
 
 <configuration>
-  <property>
-    <name>dfs.replication</name>
-    <value>%replication_number%</value>
-  </property>
-  <property>
-    <name>dfs.namenode.name.dir</name>
-    <value>file:%install_path%/hadoop/hadoop_data/hdfs/namenode</value>
-  </property>
-  <property>
-    <name>dfs.datanode.data.dir</name>
-    <value>file:%install_path%/hadoop/hadoop_data/hdfs/datanode</value>
-  </property>
+	<!-- 设置NameNode Web端访问地址 -->
+	<property>
+		<name>dfs.namenode.http-address</name>
+		<value>%hadoop_master%:9870</value>
+	</property>
+
+	<!-- 设置SecondNameNode Web端访问地址 -->
+	<property>
+		<name>dfs.namenode.secondary.http-address</name>
+		<value>%secondary_namenode%:9870</value>
+	</property>
+	
+	<property>
+		<name>dfs.replication</name>
+		<value>%replication_number%</value>
+	</property>
+	<property>
+		<name>dfs.namenode.name.dir</name>
+		<value>file:%install_path%/hadoop/hadoop_data/hdfs/namenode</value>
+	</property>
+	<property>
+		<name>dfs.datanode.data.dir</name>
+		<value>file:%install_path%/hadoop/hadoop_data/hdfs/datanode</value>
+	</property>
+
+	<!-- SecondNameNode CheckPoint 相关配置-->
+
+	<!-- SecondNameNode每隔1小时(3600s)执行一次 -->
+	<property>
+		<name>dfs.namenode.checkpoint.period</name>
+		<value>3600</value>
+	</property>
+
+	<!-- 当NameNode操作次数达到1百万时,SecondNameNode 执行一次-->
+	<property>
+		<name>dfs.namenode.checkpoint.txns</name>
+		<value>1000000</value>
+	</property>
+
+	<!-- 每分钟(60s),SecondNameNode检查一次NameNode的操作次数 -->
+	<property>
+		<name>dfs.namenode.checkpoint.check.period</name>
+		<value>60</value>
+	</property>
+
+	<!--DataNode向NameNode上报当前块信息的时间间隔,默认为6小时-->
+	<property>
+		<name>dfs.blockreport.intervalMsec</name>
+		<value>21600000</value>
+	</property>
+
+	<!--DataNode扫描自身节点块信息列表的时间,默认为6小时-->
+	<property>
+		<name>dfs.datanode.directoryscan.interval</name>
+		<value>21600</value>
+	</property>
+
+	<!--DataNode 心跳超时相关配置-->
+	<!--TimeOut = 2 * (dfs.namenode.heartbeat.recheck-interval) + 10 * (dfs.heartbeat.interval)-->
+	<!--毫秒单位，默认为5分钟-->
+	<property>
+		<name>dfs.namenode.heartbeat.recheck-interval</name>
+		<value>300000</value>
+	</property>
+	<!--秒单位，默认为3秒-->
+	<property>
+		<name>dfs.heartbeat.interval</name>
+		<value>3</value>
+	</property>
 </configuration>

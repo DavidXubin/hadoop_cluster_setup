@@ -1,4 +1,8 @@
 #!/bin/bash
+if [ -f ~/.bashrc ]; then
+    . ~/.bashrc
+fi
+export PATH=$PATH:/usr/local/jdk1.8.0_211/bin 
 
 function add_account() {
     local cur_dir=$1
@@ -12,7 +16,7 @@ function add_account() {
     #add group
     grep "${group}:" /etc/group >& /dev/null
     if [ $? -ne 0 ]; then
-        addgroup $group
+        groupadd $group
     else
         echo "$group exist!"
     fi
@@ -28,10 +32,11 @@ function add_account() {
     if [ $? = 0 ]; then
         echo "${user} exist!"
         usermod -a -G $group $user
-        usermod -a -G sudo $user
+        #usermod -a -G sudo $user
     else
-        adduser --shell /bin/bash --ingroup $group $user
-        usermod -a -G sudo $user
+        #adduser --shell /bin/bash --ingroup $group $user
+        adduser --shell /bin/bash -g $group $user
+        #usermod -a -G sudo $user
 
         echo "$user created!"
     fi
@@ -84,15 +89,16 @@ function get_local_ip() {
     local network_interface=`ifconfig -s | awk '$1 ~ /^eth/ {print $1; exit;}'`
     if [ -z $network_interface ]; then
         #please adjust your network interface
-        network_interface=`ifconfig -s | awk '$1 ~ /^enp0s8/ {print $1; exit;}'`
+        network_interface=`ifconfig -s | awk '$1 ~ /^ens/ {print $1; exit;}'`
     fi
 
-    local ip_addr=`ifconfig ${network_interface}| grep 'inet addr' | sed 's/inet addr:\([\.0-9]\{1,\}\).*/\1/g'`
+    local ip_addr=`ifconfig ${network_interface}| grep 'inet ' | sed 's/inet \([\.0-9]\{1,\}\).*/\1/g' | grep -v '127.0.0.1'`
 
     echo $ip_addr
 }
 
 function get_java_name() {
+
     local javac_path=`which javac`
     local jvm_path=`readlink -f $javac_path`
 
@@ -240,6 +246,9 @@ function set_ssh_logon() {
         host_ip=`echo $host_ip | sed 's/\"//g'`
         host_name=`echo $host_name | sed 's/\"//g'`
 
+        echo $ip_addr
+        echo $host_ip
+
         if [ $ip_addr != $host_ip ]; then
             hosts[$index]=$host_name
             index=$(($index + 1))
@@ -336,6 +345,8 @@ function set_ntp_cluster() {
 function set_hadoop() {
 
     local cur_dir=$1
+    echo $cur_dir
+
     is_node_of_cluster $cur_dir hadoop_cluster
     if [ $? = 0 ]; then
         return
@@ -344,10 +355,17 @@ function set_hadoop() {
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     local install_path_for_sed=${install_path//\//\\\/}
     local hadoop_master=`jq '.hadoop_cluster.master' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
+    local resource_manager=`jq '.hadoop_cluster.resource_manager' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
 
     local java_home=`get_java_name`
+    echo $java_home
+    java_home=${java_home//\//\\\/}
+
     cp ${cur_dir}/config/hadoop/hadoop-env.sh ${install_path}/hadoop/etc/hadoop/hadoop-env.sh
+
+    echo "$java_home"
     sed -i "s/\%java_home\%/${java_home}/" ${install_path}/hadoop/etc/hadoop/hadoop-env.sh
+
 
     cp ${cur_dir}/config/hadoop/core-site.xml ${install_path}/hadoop/etc/hadoop/
     sed -i "s/\%hadoop_master\%/${hadoop_master}/" ${install_path}/hadoop/etc/hadoop/core-site.xml
@@ -366,12 +384,14 @@ function set_hadoop() {
     fi
 
     sed -i "s/\%replication_number\%/${slave_num}/" ${install_path}/hadoop/etc/hadoop/hdfs-site.xml
+    sed -i "s/\%hadoop_master\%/${hadoop_master}/" ${install_path}/hadoop/etc/hadoop/hdfs-site.xml
 
     cp ${cur_dir}/config/hadoop/mapred-site.xml ${install_path}/hadoop/etc/hadoop/
     sed -i "s/\%hadoop_master\%/${hadoop_master}/" ${install_path}/hadoop/etc/hadoop/mapred-site.xml
 
     cp ${cur_dir}/config/hadoop/yarn-site.xml ${install_path}/hadoop/etc/hadoop/
     sed -i "s/\%hadoop_master\%/${hadoop_master}/" ${install_path}/hadoop/etc/hadoop/yarn-site.xml
+    sed -i "s/\%resource_manager\%/${resource_manager}/" ${install_path}/hadoop/etc/hadoop/yarn-site.xml
 
     if [ -f "${cur_dir}/config/hadoop/slaves" ]; then
         rm -f ${cur_dir}/config/hadoop/slaves
@@ -383,7 +403,7 @@ function set_hadoop() {
         echo -e "${slave}" >> ${cur_dir}/config/hadoop/slaves
     done
 
-    cp ${cur_dir}/config/hadoop/slaves ${install_path}/hadoop/etc/hadoop/
+    cp ${cur_dir}/config/hadoop/slaves ${install_path}/hadoop/etc/hadoop/workers
 
     is_master $cur_dir hadoop_cluster
     if [ $? = 1 ]; then
@@ -404,7 +424,7 @@ function set_hadoop() {
     local secondary_master=`jq '.hadoop_cluster.secondary_master' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
     if [ $secondary_master ]; then
         sed -i "s/\%secondary_namenode\%/${secondary_master}/" ${install_path}/hadoop/etc/hadoop/hdfs-site.xml
-        echo -e "$secondary_master" > ${install_path}/hadoop/etc/hadoop/masters
+        #echo -e "$secondary_master" > ${install_path}/hadoop/etc/hadoop/masters
     fi
 
     local user=`jq '.account.user' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
@@ -412,13 +432,16 @@ function set_hadoop() {
     egrep "#hadoop config" /home/${user}/.bashrc >& /dev/null
     if [ $? -ne 0 ]; then
         echo "#hadoop config" >> /home/${user}/.bashrc
+        local HADOOP_HOME=${install_path}/hadoop
+
         echo "export HADOOP_HOME=${install_path}/hadoop" >> /home/${user}/.bashrc
         echo "export PATH=\$PATH:\$HADOOP_HOME/bin" >> /home/${user}/.bashrc
         echo "export PATH=\$PATH:\$HADOOP_HOME/sbin" >> /home/${user}/.bashrc
         echo "export HADOOP_MAPRED_HOME=\$HADOOP_HOME" >> /home/${user}/.bashrc
         echo "export HADOOP_COMMON_HOME=\$HADOOP_HOME" >> /home/${user}/.bashrc
         echo "export HADOOP_HDFS_HOME=\$HADOOP_HOME" >> /home/${user}/.bashrc
-        echo "export YARN_HOME=\$HADOOP_HOME" >> /home/${user}/.bashrc
+        echo "export HADOOP_YARN_HOME=\$HADOOP_HOME" >> /home/${user}/.bashrc
+		echo "export HADOOP_CONF_DIR=\$HADOOP_HOME/etc/hadoop" >> /home/${user}/.bashrc
         echo "export HADOOP_COMMON_LIB_NATIVE_DIR=\$HADOOP_HOME/lib/native" >> /home/${user}/.bashrc
         echo "export HADOOP_OPTS=\"-Djava.library.path=$HADOOP_HOME/lib\"" >> /home/${user}/.bashrc
     fi
@@ -616,23 +639,31 @@ function start_hadoop() {
 
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
 
+    local java_home=`get_java_name`
+    echo $java_home
+
+    #java_home=${java_home//\//\\\/}
+
+	local resource_manager=`jq '.hadoop_cluster.resource_manager' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
+
     is_master $cur_dir hadoop_cluster
 
     if [ $? = 1 ]; then
-        jps | grep NameNode
+        ${java_home}/bin/jps | grep NameNode
         if [ $? -ne 0 ]; then
             local num=`ls ${install_path}/hadoop/hadoop_data/hdfs/namenode/ | wc -l`
             if [ $num = 0 ]; then
                 ${install_path}/hadoop/bin/hadoop namenode -format
             fi
             ${install_path}/hadoop/sbin/start-dfs.sh
-            ${install_path}/hadoop/sbin/start-yarn.sh
+			ssh $resource_manager "${install_path}/hadoop/sbin/start-yarn.sh"
+            #${install_path}/hadoop/sbin/start-yarn.sh
         fi
     fi
 
-    jps | grep JobHistoryServer
+    ${java_home}/bin/jps | grep JobHistoryServer
     if [ $? -ne 0 ]; then
-        ${install_path}/hadoop/sbin/mr-jobhistory-daemon.sh start historyserver
+		${install_path}/hadoop/sbin/mr-jobhistory-daemon.sh start historyserver
     fi
 }
 
@@ -645,19 +676,27 @@ function stop_hadoop() {
     fi
 
     local install_path=`jq '.install_path' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
+	
+	local resource_manager=`jq '.hadoop_cluster.resource_manager' ${cur_dir}/config/cluster_settings.json | sed 's/\"//g'`
+
+    local java_home=`get_java_name`
+    echo $java_home
+
     is_master $cur_dir hadoop_cluster
 
     if [ $? = 1 ]; then
-        jps | grep NameNode
+        ${java_home}/bin/jps | grep NameNode
         if [ $? = 0 ]; then
-            ${install_path}/hadoop/sbin/stop-yarn.sh
+            ##${install_path}/hadoop/sbin/stop-yarn.sh
+			ssh $resource_manager "${install_path}/hadoop/sbin/stop-yarn.sh"
             ${install_path}/hadoop/sbin/stop-dfs.sh
+			
         fi
     fi
 
-    jps | grep JobHistoryServer
+    ${java_home}/bin/jps | grep JobHistoryServer
     if [ $? = 0 ]; then
-        ${install_path}/hadoop/sbin/mr-jobhistory-daemon.sh stop historyserver
+		${install_path}/hadoop/sbin/mr-jobhistory-daemon.sh stop historyserver
     fi
 }
 
@@ -831,17 +870,21 @@ case $1 in
     ssh)
         set_ssh_logon $2
         ;;
-    install)
-        echo "install cluster"
+    install_hadoop)
+        echo "install hadoop"
         check_account $2
-        install_java  $2
-        set_ntp_cluster $2
+        #install_java  $2
+        #set_ntp_cluster $2
         set_hadoop $2
-        set_zookeeper $2
-        set_hbase $2
-        set_opentsdb $2
+        #set_zookeeper $2
+        #set_hbase $2
+        #set_opentsdb $2
         set_install_path_permission $2
         ;;
+	install_zookeeper)
+		echo "install zookeeper"
+		set_zookeeper $2
+		;;
     start_zookeeper)
         echo "start zookeeper"
         start_zookeeper $2

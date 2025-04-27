@@ -25,20 +25,25 @@
   </property>
   <property>
     <name>yarn.resourcemanager.resource-tracker.address</name>
-    <value>%hadoop_master%:8025</value>
+    <value>%resource_manager%:8025</value>
   </property>
   <property>
     <name>yarn.resourcemanager.scheduler.address</name>
-    <value>%hadoop_master%:8030</value>
+    <value>%resource_manager%:8030</value>
+  </property>
+  <!-- 指定ResourceManager的地址 -->
+  <property>
+    <name>yarn.resourcemanager.hostname</name>
+    <value>%resource_manager%</value>
   </property>
   <property>
     <name>yarn.resourcemanager.address</name>
-    <value>%hadoop_master%:8050</value>
+    <value>%resource_manager%:8050</value>
   </property>
-  <property>
+  <!--property>
     <name>yarn.resourcemanager.webapp.address</name>
-    <value>%hadoop_master%:8088</value>
-  </property>
+    <value>%resource_manager%:8098</value>
+  </property-->
   <property>
     <name>yarn.log-aggregation-enable</name>
     <value>true</value>
@@ -47,6 +52,13 @@
     <name>yarn.log-aggregation.retain-seconds</name>
     <value>2592000</value>
   </property>
+  
+    <!-- 环境变量的继承 -->
+  <property>
+    <name>yarn.nodemanager.env-whitelist</name>
+    <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,HADOOP_YARN_HOME,HADOOP_HOME,PATH,LANG,HADOOP_MAPRED_HOME,HADOOP_COMMON_LIB_NATIVE_DIR,HADOOP_OPTS</value>
+  </property>
+  
   <property>
     <name>yarn.log.server.url</name>
     <value>http://%hadoop_master%:19888/jobhistory/logs/</value>

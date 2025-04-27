@@ -24,4 +24,9 @@
         <name>hadoop.tmp.dir</name>
         <value>file:%install_path%/hadoop/tmp</value>
   </property>
+    <!-- 设置HDFS网页登录使用的静态用户为root>
+    <property>
+        <name>hadoop.http.staticuser.user</name>
+        <value>root</value>
+    </property-->
 </configuration>

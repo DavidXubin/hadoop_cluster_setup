@@ -1,73 +1,70 @@
 {
     "account": {
         "user" : "bds",
-        "group" : "infra"
+        "group" : "datainfra"
     },
 
-    "install_path" : "/opt/monitor",
+    "install_path" : "/bigdata",
 
 
     "hosts": [
         {
-            "ip": "172.16.31.65",
-            "name": "monitor-master"
+            "ip": "192.168.2.81",
+            "name": "infra-worker1"
         },
 
         {
-            "ip": "172.16.31.66",
-            "name": "monitor-slave1"
+            "ip": "192.168.2.87",
+            "name": "infra-worker2"
         },
 
         {
-            "ip": "172.16.31.67",
-            "name": "monitor-slave2"
-        },
-
-        {
-            "ip": "172.16.31.68",
-            "name": "monitor-slave3"
+            "ip": "192.168.2.56",
+            "name": "infra-worker3"
         }
+
     ],
 
 
     "ntp_cluster": {
         "timezone": "/usr/share/zoneinfo/Asia/Shanghai",
-        "master": "monitor-master",
-        "slaves": ["monitor-slave1", "monitor-slave2", "monitor-slave3"]
+        "master": "infra-worker1",
+        "slaves": ["infra-worker2", "infra-worker3"]
     },
 
     "hadoop_cluster": {
-        "master":  "monitor-master",
-        "secondary_master": "",
-        "slaves": ["monitor-slave1", "monitor-slave2", "monitor-slave3"]
+        "master":  "infra-worker1",
+        "secondary_master": "infra-worker3",
+		"resource_manager": "infra-worker2",
+        "slaves": ["infra-worker1", "infra-worker2", "infra-worker3"]
     },
 
     "zookeeper_cluster": [
         {
-            "host" : "monitor-master",
+            "host" : "infra-worker1",
             "id" : 1
         },
         {
-            "host" : "monitor-slave1",
+            "host" : "infra-worker2",
             "id" : 2
         },
         {
-            "host" : "monitor-slave3",
+            "host" : "infra-worker3",
             "id" : 3
         }
     ],
 
     "hbase_cluster": {
-        "master": "monitor-master",
-        "secondary_master": " monitor-slave3",
-        "slaves": ["monitor-slave1", "monitor-slave2", "monitor-slave3"]
+        "master": "infra-worker1",
+        "secondary_master": " infra-worker2",
+        "slaves": ["infra-worker1", "infra-worker2"]
     },
 
-    "opentsdb_cluster": ["monitor-master", "monitor-slave1", "monitor-slave2", "monitor-slave3"],
+    "opentsdb_cluster": ["infra-worker1", "infra-worker2", "infra-worker3"],
 
     "spark_cluster": {
-        "master": "monitor-master",
-        "slaves": ["monitor-slave1", "monitor-slave2", "monitor-slave3"]
+        "master": "infra-worker1",
+        "slaves": ["infra-worker2", "infra-worker3"]
     }
 
 }
